@@ -1,4 +1,4 @@
-[200~# Common IntelliJ Platform excludes
+# Common IntelliJ Platform excludes
 
 # User specific
 **/.idea/**/workspace.xml
