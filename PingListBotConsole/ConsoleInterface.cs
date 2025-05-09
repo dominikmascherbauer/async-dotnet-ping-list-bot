@@ -94,14 +94,12 @@ public class ConsoleInterface
         
         // add content
         var additionalLines = _header.Count + _footer.Count + pingTargets.Count - _height;
+        var printedTargets = pingTargets.OrderBy(t => t.IpAddress).AsEnumerable();
         if (scrollPos > 0 && additionalLines > 0)
         {
-            _content.AddRange(pingTargets.Skip(Math.Min(scrollPos, additionalLines)).Take(_height).ToList().AsReadOnly());
+            printedTargets = pingTargets.Skip(Math.Min(scrollPos, additionalLines));
         }
-        else
-        {
-            _content.AddRange(pingTargets.Take(_height).ToList().AsReadOnly());
-        }
+        _content.AddRange(printedTargets.Take(_height).ToList().AsReadOnly());
         
     }
 
