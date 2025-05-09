@@ -4,7 +4,7 @@ namespace PingListBotConsole;
 
 class Program
 {
-    static void Main(string[] args)
+    static async Task Main(string[] args)
     {
         var pingManager = new PingManager(5000);
 
@@ -22,7 +22,8 @@ class Program
                 }
             }
         }
-
+        
+        var openTasks = new List<Task>();
         var consoleInterface = new ConsoleInterface();
         var running = true;
         string? warning = null;
@@ -51,7 +52,7 @@ class Program
                 {
                     case ConsoleKey.Q:
                         running = false;
-                        pingManager.Stop();
+                        openTasks.Add(pingManager.Stop());
                         break;
                     case ConsoleKey.Add:
                         pingManager.IncreasePingDelay();
@@ -68,7 +69,7 @@ class Program
                         {
                             if (pingManager.GetTargets().Any(t => t.IpAddress == ipAddress))
                             {
-                                pingManager.RemoveTarget(ipAddress);
+                                openTasks.Add(pingManager.RemoveTarget(ipAddress));
                             }
                             else
                             {
@@ -104,5 +105,7 @@ class Program
                 }
             }
         }
+
+        await Task.WhenAll(openTasks);
     }
 }

@@ -5,7 +5,7 @@ namespace PingListBotConsole;
 public class PingManager : IDisposable
 {
     private readonly HttpPortChecker _httpPortChecker;
-    private readonly Dictionary<PingTarget, CancellationTokenSource> _targets;
+    private readonly Dictionary<PingTarget, (CancellationTokenSource cts, Task task)> _targets;
     private readonly int _timeoutMs;
     private int _pingDelayMs;
     
@@ -15,7 +15,7 @@ public class PingManager : IDisposable
     {
         if (pingDelayMs <= 1000)
         {
-            throw new ArgumentOutOfRangeException("pingDelayMs", "The ping delay must be above 1000 milliseconds to avoid building a DDOS bot.");
+            throw new ArgumentOutOfRangeException("pingDelayMs", "The ping delay is limited to at least 1000 milliseconds.");
         }
         
         _httpPortChecker = new HttpPortChecker(pingDelayMs);
@@ -33,9 +33,9 @@ public class PingManager : IDisposable
         }
 
         var target = new PingTarget(ipAddress, checkedPorts);
-        var localCts = new CancellationTokenSource();
-        _ = MonitorTarget(target, localCts);
-        _targets.Add(target, localCts);
+        var cts = new CancellationTokenSource();
+        var task = MonitorTarget(target, cts);
+        _targets.Add(target, (cts, task));
     }
 
     private async Task MonitorTarget(PingTarget target, CancellationTokenSource cts)
@@ -74,14 +74,21 @@ public class PingManager : IDisposable
         }
     }
 
-    public void Stop()
+    public async Task Stop()
     {
-        _targets.Values.ToList().ForEach(cts => cts.Cancel());
+        var tasks = _targets.Values.Select(async pingTask =>
+        {
+            await pingTask.cts.CancelAsync();
+            await pingTask.task;
+        });
+        _targets.Clear();
+        
+        await Task.WhenAll(tasks);
     }
 
     public void Dispose()
     {
-        _targets.Values.ToList().ForEach(cts => cts.Dispose());
+        _targets.Values.ToList().ForEach(pingTarget => pingTarget.cts.Dispose());
     }
 
     public List<PingTarget> GetTargets()
@@ -117,13 +124,19 @@ public class PingManager : IDisposable
         _targets.Keys.ToList().ForEach(t => t.RemoveCheckedPort(port));
     }
 
-    public void RemoveTarget(string ipAddress)
+    public async Task RemoveTarget(string ipAddress)
     {
         var pingTarget = _targets.Keys.ToList().Find(t => t.IpAddress == ipAddress);
         if (pingTarget == null) return;
         
-        _targets.TryGetValue(pingTarget, out var cts);
-        cts?.Cancel();
+        // fetch task
+        _targets.TryGetValue(pingTarget, out var pingTask);
+        // remove from target list
         _targets.Remove(pingTarget);
+        
+        // cancel the ping task
+        await pingTask.cts.CancelAsync();
+        // wait for the task to finish
+        await pingTask.task;
     }
 }
