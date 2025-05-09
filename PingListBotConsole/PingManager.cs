@@ -5,13 +5,14 @@ namespace PingListBotConsole;
 public class PingManager : IDisposable
 {
     private readonly HttpPortChecker _httpPortChecker;
-    private readonly List<PingTarget> _targets;
+    private readonly Dictionary<PingTarget, Task> _targets;
     private readonly CancellationTokenSource _cts;
     private int _pingDelayMs;
+    private int _timeoutMs;
     
     public bool UpdateAvailable { get; set; }
 
-    public PingManager(int pingDelayMs)
+    public PingManager(int pingDelayMs, int timeoutMs = 5000)
     {
         if (pingDelayMs <= 1000)
         {
@@ -22,6 +23,7 @@ public class PingManager : IDisposable
         _cts = new CancellationTokenSource();
         _targets = [];
         _pingDelayMs = pingDelayMs;
+        _timeoutMs = timeoutMs;
     }
 
     public void RegisterTarget(string ipAddress, List<int> checkedPorts)
@@ -31,52 +33,45 @@ public class PingManager : IDisposable
             checkedPorts.Add(80);
             checkedPorts.Add(8080);
         }
-        _targets.Add(new PingTarget(ipAddress, checkedPorts));
+
+        var target = new PingTarget(ipAddress, checkedPorts);
+        _targets.Add(target, MonitorTarget(target));
     }
 
-    public async Task StartMonitoring()
+    private async Task MonitorTarget(PingTarget target)
     {
         while (!_cts.IsCancellationRequested)
         {
-            var tasks = _targets.Select(async target =>
+            // Ping a target 
+            var pingReply = await new Ping().SendPingAsync(target.IpAddress, TimeSpan.FromMilliseconds(_timeoutMs), cancellationToken: _cts.Token);
+
+            // after pinging check if successful and update the pingTarget
+            if (pingReply.Status == IPStatus.Success)
             {
-                await CheckTarget(target);
-                return target;
-            });
-            
-            await Task.WhenAll(tasks);
+                target.IsReachable = true;
+                target.LastResponseTime = pingReply.RoundtripTime;
+                target.LastSuccessfulPing = DateTime.UtcNow;
+                target.SuccessCount++;
+                // also check all ports asynchronously
+                var tasks = target.CheckedPorts.Select(async port =>
+                {
+                    var portOpen = await _httpPortChecker.CheckPortAsync(target.IpAddress, port);
+                    target.SetIsOpen(port, portOpen);
+                    return portOpen;
+                });
+
+                await Task.WhenAll(tasks);
+            }
+            else
+            {
+                target.IsReachable = false;
+                target.FailureCount++;
+            }
+
+            UpdateAvailable = true;
             
             await Task.Delay(_pingDelayMs, _cts.Token);
         }
-    }
-
-    private async Task CheckTarget(PingTarget target)
-    {
-        // Ping and wait at max one ping cycle 
-        var pingReply = await new Ping().SendPingAsync(target.IpAddress, _pingDelayMs);
-
-        if (pingReply.Status == IPStatus.Success)
-        {
-            target.IsReachable = true;
-            target.LastResponseTime = pingReply.RoundtripTime;
-            target.LastSuccessfulPing = DateTime.UtcNow;
-            target.SuccessCount++;
-            var tasks = target.CheckedPorts.Select(async port =>
-            {
-                var portOpen = await _httpPortChecker.CheckPortAsync(target.IpAddress, port);
-                target.SetIsOpen(port, portOpen);
-                return portOpen;
-            });
-            
-            await Task.WhenAll(tasks);
-        }
-        else
-        {
-            target.IsReachable = false;
-            target.FailureCount++;
-        }
-
-        UpdateAvailable = true;
     }
 
     public void Stop()
@@ -91,7 +86,7 @@ public class PingManager : IDisposable
 
     public List<PingTarget> GetTargets()
     {
-        return _targets;
+        return _targets.Keys.ToList();
     }
 
     public void IncreasePingDelay()
@@ -114,19 +109,20 @@ public class PingManager : IDisposable
 
     public void AddCheckedPort(int port)
     {
-        _targets.ForEach(t => t.AddCheckedPort(port));
+        _targets.Keys.ToList().ForEach(t => t.AddCheckedPort(port));
     }
 
     public void RemoveCheckedPort(int port)
     {
-        _targets.ForEach(t => t.RemoveCheckedPort(port));
+        _targets.Keys.ToList().ForEach(t => t.RemoveCheckedPort(port));
     }
 
-    public void RemoveTarget(string ipAddress)
+    public async Task RemoveTarget(string ipAddress)
     {
-        if (_targets.Any(t => t.IpAddress == ipAddress))
-        {
-            _targets.Remove(_targets.Find(t => t.IpAddress == ipAddress)!);
-        }
+        var pingTarget = _targets.Keys.ToList().Find(t => t.IpAddress == ipAddress);
+        if (pingTarget == null) return;
+        
+        _targets.TryGetValue(pingTarget, out var pingTask);
+        if (pingTask != null) await pingTask;
     }
 }

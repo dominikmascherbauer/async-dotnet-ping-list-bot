@@ -16,14 +16,16 @@ class Program
             foreach (var ipAddress in ipAddresses)
             {
                 var trimmedIp = ipAddress.Trim();
-                pingManager.RegisterTarget(trimmedIp, []);
+                if (IPAddress.TryParse(trimmedIp, out var ip))
+                {
+                    pingManager.RegisterTarget(trimmedIp, []);
+                }
             }
         }
 
-        _ = pingManager.StartMonitoring();
-
         var consoleInterface = new ConsoleInterface();
         var running = true;
+        string? warning = null;
         // trigger first render
         pingManager.UpdateAvailable = true;
 
@@ -35,7 +37,7 @@ class Program
                 pingManager.UpdateAvailable = false;
                 
                 // Update components
-                consoleInterface.Update(0, pingManager.GetPingDelay(), pingManager.GetTargets());
+                consoleInterface.Update(0, pingManager.GetPingDelay(), pingManager.GetTargets(), warning);
 
                 // Draw everything
                 consoleInterface.Draw();
@@ -44,6 +46,7 @@ class Program
             // Check for user inputs
             if (Console.KeyAvailable)
             {
+                warning = null;
                 switch (Console.ReadKey(true).Key)
                 {
                     case ConsoleKey.Q:
@@ -65,7 +68,7 @@ class Program
                         {
                             if (pingManager.GetTargets().Any(t => t.IpAddress == ipAddress))
                             {
-                                pingManager.RemoveTarget(ipAddress);
+                                _ = pingManager.RemoveTarget(ipAddress);
                             }
                             else
                             {
@@ -75,7 +78,7 @@ class Program
                         }
                         else
                         {
-                            Console.WriteLine($"Invalid IP address: {ipAddress}");
+                            warning = $"Invalid IP address: {ipAddress}";
                         }
                         break;
                     case ConsoleKey.P:
@@ -95,14 +98,11 @@ class Program
                         }
                         else
                         {
-                            Console.WriteLine($"Invalid port number: {port}");
+                            warning = $"Invalid port number: {port}";
                         }
                         break;
                 }
             }
-
-            // Wait before next update
-            Thread.Sleep(100);
         }
     }
 }

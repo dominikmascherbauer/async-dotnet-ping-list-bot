@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
 
 namespace PingListBotConsole;
 
@@ -41,7 +42,7 @@ public class ConsoleInterface
             {"Reachable", "Reachable".Length},
             {"Response Time", "Response Time".Length},
             {"Http Ports", "Http Ports".Length},
-            {"Last Response", DateTime.UtcNow.ToString(CultureInfo.CurrentCulture).Length}
+            {"Last Response", DateTime.UtcNow.ToString("HH:mm:ss - dd.MM.yyyy").Length}
         };
         _header = [];
         _content = [];
@@ -60,18 +61,18 @@ public class ConsoleInterface
         return size;
     }
 
-    public void Update(int scrollPos, int pingDelayMs, List<PingTarget> pingTargets)
+    public void Update(int scrollPos, int pingDelayMs, List<PingTarget> pingTargets, string? warning)
     {
         _header.Clear();
         _content.Clear();
         _footer.Clear();
         
         // update ports column size
-        _columns["Http Ports"] = pingTargets.Max(t => string.Join(" ", t.CheckedPorts).Length);
+        _columns["Http Ports"] = Math.Max("Http Ports".Length, pingTargets.Max(t => string.Join(" ", t.CheckedPorts).Length));
         
         // write header
         _header.Add($"Ping List Bot Console Application - Last Update {DateTime.UtcNow}");
-        _header.Add($"Current Ping Timeout: {pingDelayMs}ms (+/- to inc/dec)");
+        _header.Add($"Current Ping Delay: {pingDelayMs} ms (+/- to inc/dec by 500ms)");
         _header.Add(new string('═', _width));
         _header.Add("");
         _header.Add(string.Join(" | ", _columns.Select(c => c.Key.PadRight(c.Value))));
@@ -81,8 +82,14 @@ public class ConsoleInterface
         _footer.Add(new string('═', _width));
         _footer.Add("Press 'T' to add/remove a target");
         _footer.Add("Press 'P' to add/remove a checked http port");
-        //_footer.Add("Press 1-9 to enable/disable a column (1 -> Reachable, ...)");
         _footer.Add("Press 'Q' to quit");
+
+        if (warning != null)
+        {
+            _footer.Add("");
+            _footer.Add($"!!! {warning} !!!");
+        }
+        
         
         
         // add content
@@ -101,7 +108,6 @@ public class ConsoleInterface
     public void Draw()
     {
         Console.Clear();
-        //Console.SetCursorPosition(0, 0);
         for (var row = 0; row < _height; row++)
         {
             if (row < _header.Count)
@@ -124,14 +130,21 @@ public class ConsoleInterface
                     Console.Write(" | ");
                     Console.Write((pingTarget.IsReachable ? $"{pingTarget.LastResponseTime}" : "-").PadLeft(_columns["Response Time"] - 3));
                     Console.Write(" ms | ");
+                    var padding =  _columns["Http Ports"] + 1; // +1 for the extra padding to the right
                     pingTarget.CheckedPorts.Order().ToList().ForEach(port =>
                     {
                         Console.ForegroundColor = pingTarget.IsOpen(port) ? ConsoleColor.Green : ConsoleColor.Red;
+                        var str = $"{port} ";
                         Console.Write($"{port} ");
                         Console.ResetColor();
+                        padding -= str.Length;
                     });
-                    Console.Write(" | ");
-                    Console.Write(pingTarget.LastResponseTime);
+                    if (padding > 0)
+                    {
+                        Console.Write(new string(' ', padding));
+                    }
+                    Console.Write("| ");
+                    Console.Write(pingTarget.SuccessCount > 0 ? pingTarget.LastSuccessfulPing.ToLocalTime().ToString("HH:mm:ss - dd.MM.yyyy") : "-".PadLeft(_columns["Last Response"]));
                     Console.WriteLine();
                 }
                 else
