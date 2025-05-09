@@ -76,11 +76,7 @@ public class PingManager : IDisposable
 
     public async Task Stop()
     {
-        var tasks = _targets.Values.Select(async pingTask =>
-        {
-            await pingTask.cts.CancelAsync();
-            await pingTask.task;
-        });
+        var tasks = _targets.Values.Select(async pingTask => await StopPingTask(pingTask));
         _targets.Clear();
         
         await Task.WhenAll(tasks);
@@ -133,10 +129,26 @@ public class PingManager : IDisposable
         _targets.TryGetValue(pingTarget, out var pingTask);
         // remove from target list
         _targets.Remove(pingTarget);
-        
+     
+        await StopPingTask(pingTask);
+    }
+
+    private static async Task StopPingTask((CancellationTokenSource cts, Task task) pingTask)
+    {
         // cancel the ping task
         await pingTask.cts.CancelAsync();
-        // wait for the task to finish
-        await pingTask.task;
+        try
+        {
+            // wait for the task to finish
+            await pingTask.task;
+        }
+        catch (OperationCanceledException e)
+        {
+            // ignore that here
+        }
+        finally
+        {
+            pingTask.cts.Dispose();
+        }
     }
 }

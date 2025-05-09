@@ -1,7 +1,3 @@
-using System.Globalization;
-using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
-
 namespace PingListBotConsole;
 
 using System;
@@ -94,7 +90,11 @@ public class ConsoleInterface
         
         // add content
         var additionalLines = _header.Count + _footer.Count + pingTargets.Count - _height;
-        var printedTargets = pingTargets.OrderBy(t => t.IpAddress).AsEnumerable();
+        var printedTargets = pingTargets.OrderBy(t =>
+        {
+            var octets = t.IpAddress.Split('.').Select(int.Parse).ToArray();
+            return (octets[0], octets[1], octets[2], octets[3]);
+        }).AsEnumerable();
         if (scrollPos > 0 && additionalLines > 0)
         {
             printedTargets = pingTargets.Skip(Math.Min(scrollPos, additionalLines));
