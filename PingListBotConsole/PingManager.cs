@@ -7,7 +7,7 @@ public class PingManager : IDisposable
     private readonly HttpPortChecker _httpPortChecker;
     private readonly Dictionary<PingTarget, (CancellationTokenSource cts, Task task)> _targets;
     private readonly int _timeoutMs;
-    private int _pingDelayMs;
+    private volatile int _pingDelayMs;
     
     public bool UpdateAvailable { get; set; }
 

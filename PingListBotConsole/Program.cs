@@ -18,7 +18,7 @@ class Program
                 var trimmedIp = ipAddress.Trim();
                 if (IPAddress.TryParse(trimmedIp, out var ip))
                 {
-                    pingManager.RegisterTarget(trimmedIp, []);
+                    pingManager.RegisterTarget(ip.ToString(), []);
                 }
             }
         }
@@ -67,13 +67,13 @@ class Program
                         var ipAddress = Console.ReadLine();
                         if (ipAddress != null && IPAddress.TryParse(ipAddress, out var ip))
                         {
-                            if (pingManager.GetTargets().Any(t => t.IpAddress == ipAddress))
+                            if (pingManager.GetTargets().Any(t => t.IpAddress == ip.ToString()))
                             {
-                                openTasks.Add(pingManager.RemoveTarget(ipAddress));
+                                openTasks.Add(pingManager.RemoveTarget(ip.ToString()));
                             }
                             else
                             {
-                                pingManager.RegisterTarget(ipAddress, []);
+                                pingManager.RegisterTarget(ip.ToString(), []);
                             }
                             pingManager.UpdateAvailable = true;
                         }
