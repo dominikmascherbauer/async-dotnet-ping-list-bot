@@ -5,10 +5,9 @@ namespace PingListBotConsole;
 public class PingManager : IDisposable
 {
     private readonly HttpPortChecker _httpPortChecker;
-    private readonly Dictionary<PingTarget, Task> _targets;
-    private readonly CancellationTokenSource _cts;
+    private readonly Dictionary<PingTarget, CancellationTokenSource> _targets;
+    private readonly int _timeoutMs;
     private int _pingDelayMs;
-    private int _timeoutMs;
     
     public bool UpdateAvailable { get; set; }
 
@@ -20,7 +19,6 @@ public class PingManager : IDisposable
         }
         
         _httpPortChecker = new HttpPortChecker(pingDelayMs);
-        _cts = new CancellationTokenSource();
         _targets = [];
         _pingDelayMs = pingDelayMs;
         _timeoutMs = timeoutMs;
@@ -35,15 +33,17 @@ public class PingManager : IDisposable
         }
 
         var target = new PingTarget(ipAddress, checkedPorts);
-        _targets.Add(target, MonitorTarget(target));
+        var localCts = new CancellationTokenSource();
+        _ = MonitorTarget(target, localCts);
+        _targets.Add(target, localCts);
     }
 
-    private async Task MonitorTarget(PingTarget target)
+    private async Task MonitorTarget(PingTarget target, CancellationTokenSource cts)
     {
-        while (!_cts.IsCancellationRequested)
+        while (!cts.IsCancellationRequested)
         {
             // Ping a target 
-            var pingReply = await new Ping().SendPingAsync(target.IpAddress, TimeSpan.FromMilliseconds(_timeoutMs), cancellationToken: _cts.Token);
+            var pingReply = await new Ping().SendPingAsync(target.IpAddress, TimeSpan.FromMilliseconds(_timeoutMs), cancellationToken: cts.Token);
 
             // after pinging check if successful and update the pingTarget
             if (pingReply.Status == IPStatus.Success)
@@ -70,18 +70,18 @@ public class PingManager : IDisposable
 
             UpdateAvailable = true;
             
-            await Task.Delay(_pingDelayMs, _cts.Token);
+            await Task.Delay(_pingDelayMs, cts.Token);
         }
     }
 
     public void Stop()
     {
-        _cts.Cancel();
+        _targets.Values.ToList().ForEach(cts => cts.Cancel());
     }
 
     public void Dispose()
     {
-        _cts.Dispose();
+        _targets.Values.ToList().ForEach(cts => cts.Dispose());
     }
 
     public List<PingTarget> GetTargets()
@@ -117,12 +117,13 @@ public class PingManager : IDisposable
         _targets.Keys.ToList().ForEach(t => t.RemoveCheckedPort(port));
     }
 
-    public async Task RemoveTarget(string ipAddress)
+    public void RemoveTarget(string ipAddress)
     {
         var pingTarget = _targets.Keys.ToList().Find(t => t.IpAddress == ipAddress);
         if (pingTarget == null) return;
         
-        _targets.TryGetValue(pingTarget, out var pingTask);
-        if (pingTask != null) await pingTask;
+        _targets.TryGetValue(pingTarget, out var cts);
+        cts?.Cancel();
+        _targets.Remove(pingTarget);
     }
 }

@@ -68,7 +68,7 @@ class Program
                         {
                             if (pingManager.GetTargets().Any(t => t.IpAddress == ipAddress))
                             {
-                                _ = pingManager.RemoveTarget(ipAddress);
+                                pingManager.RemoveTarget(ipAddress);
                             }
                             else
                             {
